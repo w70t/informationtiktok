@@ -343,74 +343,111 @@ COUNTRY_AR = {
 }
 
 
-def country_label(code):
-    """رمز الدولة → علم + اسم عربي، مثل: 🇮🇶 العراق (IQ)."""
+COUNTRY_EN = {
+    "IQ": "Iraq", "SA": "Saudi Arabia", "DE": "Germany", "US": "USA",
+    "EG": "Egypt", "AE": "UAE", "KW": "Kuwait", "QA": "Qatar",
+    "BH": "Bahrain", "OM": "Oman", "JO": "Jordan", "SY": "Syria",
+    "LB": "Lebanon", "PS": "Palestine", "YE": "Yemen", "MA": "Morocco",
+    "DZ": "Algeria", "TN": "Tunisia", "LY": "Libya", "SD": "Sudan",
+    "TR": "Turkey", "GB": "UK", "FR": "France", "IT": "Italy",
+    "ES": "Spain", "NL": "Netherlands", "SE": "Sweden", "CA": "Canada",
+    "IN": "India", "PK": "Pakistan", "ID": "Indonesia", "RU": "Russia",
+}
+
+
+def country_label(code, lang="ar"):
+    """رمز الدولة → علم + اسم، مثل: 🇮🇶 العراق (IQ) أو 🇮🇶 Iraq (IQ)."""
     if not code or len(code) != 2 or not code.isalpha():
-        return code or "غير متوفر"
+        return code or ("غير متوفر" if lang != "en" else "N/A")
     code = code.upper()
     flag = "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code)
-    name = COUNTRY_AR.get(code)
+    name = (COUNTRY_AR if lang != "en" else COUNTRY_EN).get(code)
     return f"{flag} {name} ({code})" if name else f"{flag} {code}"
 
 
-def format_report(info):
-    """تنسيق التقرير بالعربي بأسلوب البوتات المتداولة."""
+def format_report(info, lang="ar"):
+    """تنسيق التقرير بلغة المستخدم (ar/en)."""
+    ar = lang != "en"
+    na = "غير متوفر" if ar else "N/A"
+
     def yn(v):
-        return "نعم ✅" if v else "لا ❌"
+        if ar:
+            return "نعم ✅" if v else "لا ❌"
+        return "Yes ✅" if v else "No ❌"
 
-    def val(v, default="غير متوفر"):
-        return v if v not in (None, "") else default
+    def val(v):
+        return v if v not in (None, "") else na
 
-    # دولة الحساب مع مصدرها ونسبة الثقة
+    # سطر الدولة مع مصدرها ونسبة الثقة
     if info.get("region"):
-        region_line = country_label(info["region"])
+        region_line = country_label(info["region"], lang)
         conf = info.get("region_confidence")
         src = info.get("region_source")
         if src == "videos" and conf:
-            region_line += f"  (من الفيديوهات: {conf})"
+            region_line += (f"  (من الفيديوهات: {conf})" if ar
+                            else f"  (from videos: {conf})")
         elif src == "following" and conf:
-            region_line += f"  (تقديري من المتابَعات: {conf})"
-        elif conf:
-            region_line += f"  ({conf})"
+            region_line += (f"  (تقديري من المتابَعات: {conf})" if ar
+                            else f"  (estimated from following: {conf})")
     else:
-        region_line = "غير متوفر"
+        region_line = na
 
+    L = {
+        "title": "📋 <b>معلومات حساب تيك توك</b>" if ar else "📋 <b>TikTok Account Info</b>",
+        "user": "👤 اليوزر" if ar else "👤 Username",
+        "name": "📛 الاسم" if ar else "📛 Name",
+        "id": "🆔 الآيدي" if ar else "🆔 ID",
+        "created": "📅 تاريخ الإنشاء" if ar else "📅 Created",
+        "country": "🌍 دولة الحساب" if ar else "🌍 Country",
+        "lang": "🗣 لغة الحساب" if ar else "🗣 Language",
+        "verified": "✔️ موثّق" if ar else "✔️ Verified",
+        "private": "🔒 حساب خاص" if ar else "🔒 Private",
+        "link": "🔗 الرابط" if ar else "🔗 Link",
+        "followers": "👥 المتابعون" if ar else "👥 Followers",
+        "following": "➡️ يتابع" if ar else "➡️ Following",
+        "friends": "🤝 الأصدقاء" if ar else "🤝 Friends",
+        "hearts": "❤️ الإعجابات" if ar else "❤️ Likes",
+        "videos": "🎬 الفيديوهات" if ar else "🎬 Videos",
+        "ig": "📷 انستقرام" if ar else "📷 Instagram",
+        "tw": "🐦 تويتر" if ar else "🐦 Twitter",
+        "yt": "▶️ يوتيوب" if ar else "▶️ YouTube",
+        "bio": "📝 البايو" if ar else "📝 Bio",
+    }
+    sep = "━━━━━━━━━━━━━━━"
     lines = [
-        "📋 <b>معلومات حساب تيك توك</b>",
-        "━━━━━━━━━━━━━━━",
-        f"👤 اليوزر: <code>@{val(info['username'])}</code>",
-        f"📛 الاسم: {val(info['nickname'])}",
-        f"🆔 الآيدي: <code>{val(info['user_id'])}</code>",
-        f"📅 تاريخ الإنشاء: {val(info['create_date'])}",
-        f"🌍 دولة الحساب: {region_line}",
-        f"🗣 لغة الحساب: {val(info['language'])}",
-        f"✔️ موثّق: {yn(info['verified'])}",
-        f"🔒 حساب خاص: {yn(info['private'])}",
-        f"🔗 الرابط: {val(info['bio_link'])}",
-        "━━━━━━━━━━━━━━━",
-        f"👥 المتابعون: {val(info['followers'])}",
-        f"➡️ يتابع: {val(info['following'])}",
-        f"🤝 الأصدقاء: {val(info['friends'])}",
-        f"❤️ الإعجابات: {val(info['hearts'])}",
-        f"🎬 الفيديوهات: {val(info['videos'])}",
+        L["title"], sep,
+        f"{L['user']}: <code>@{val(info['username'])}</code>",
+        f"{L['name']}: {val(info['nickname'])}",
+        f"{L['id']}: <code>{val(info['user_id'])}</code>",
+        f"{L['created']}: {val(info['create_date'])}",
+        f"{L['country']}: {region_line}",
+        f"{L['lang']}: {val(info['language'])}",
+        f"{L['verified']}: {yn(info['verified'])}",
+        f"{L['private']}: {yn(info['private'])}",
+        f"{L['link']}: {val(info['bio_link'])}",
+        sep,
+        f"{L['followers']}: {val(info['followers'])}",
+        f"{L['following']}: {val(info['following'])}",
+        f"{L['friends']}: {val(info['friends'])}",
+        f"{L['hearts']}: {val(info['hearts'])}",
+        f"{L['videos']}: {val(info['videos'])}",
     ]
 
-    # الحسابات المربوطة
     social = info.get("social") or {}
-    soc_lines = []
+    soc = []
     if social.get("instagram"):
-        soc_lines.append(f"📷 انستقرام: {social['instagram']}")
+        soc.append(f"{L['ig']}: {social['instagram']}")
     if social.get("twitter"):
-        soc_lines.append(f"🐦 تويتر: {social['twitter']}")
+        soc.append(f"{L['tw']}: {social['twitter']}")
     if social.get("youtube"):
-        soc_lines.append(f"▶️ يوتيوب: {social['youtube']}")
-    if soc_lines:
-        lines.append("━━━━━━━━━━━━━━━")
-        lines.extend(soc_lines)
+        soc.append(f"{L['yt']}: {social['youtube']}")
+    if soc:
+        lines.append(sep)
+        lines.extend(soc)
 
     if info.get("signature"):
-        lines.append("━━━━━━━━━━━━━━━")
-        lines.append(f"📝 البايو: {info['signature']}")
+        lines.append(sep)
+        lines.append(f"{L['bio']}: {info['signature']}")
     return "\n".join(lines)
 
 
