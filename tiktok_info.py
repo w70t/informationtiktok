@@ -9,6 +9,7 @@ tiktok_info.py
   (B) TikTokApi : تشغّل متصفح Chromium حقيقي وتولّد الكوكيز/التواقيع تلقائياً (الأضمن).
 
 دولة الحساب تُستخرج من أغلبية مناطق فيديوهاته عبر tikwm (مجاني بدون مفتاح).
+وللحسابات بلا فيديوهات: تقدير من أغلبية دول المتابَعات.
 كل الحقول بيانات عامة، ليست اختراقاً.
 """
 
@@ -19,7 +20,7 @@ from datetime import datetime, timezone
 
 import requests
 
-# API عام مجاني بدون مفتاح، نستخدمه لدولة الحساب (من الفيديوهات) والحسابات المربوطة
+# API عام مجاني بدون مفتاح، نستخدمه لدولة الحساب والحسابات المربوطة
 TIKWM_BASE = "https://www.tikwm.com"
 
 # هيدرز متصفح حقيقي لتقليل الحجب
@@ -195,6 +196,29 @@ def get_account_region(username, max_videos=30):
         return None, 0, 0
 
 
+def get_region_from_following(user_id, sec_uid=None, max_users=50):
+    """
+    تقدير دولة الحساب من أغلبية دول الحسابات التي يتابعها (للحسابات بلا فيديوهات).
+    قائمة tikwm/following ترجّع region لكل حساب متابَع. أقل دقة من الفيديوهات (تقديري).
+    """
+    if not user_id:
+        return None, 0, 0
+    try:
+        r = requests.get(
+            f"{TIKWM_BASE}/api/user/following",
+            params={"user_id": user_id, "sec_uid": sec_uid or "", "count": max_users},
+            timeout=30,
+        )
+        users = (r.json().get("data") or {}).get("followings") or []
+        regions = [u.get("region") for u in users if u.get("region")]
+        if not regions:
+            return None, 0, 0
+        top, count = Counter(regions).most_common(1)[0]
+        return top, count, len(regions)
+    except (requests.RequestException, ValueError):
+        return None, 0, 0
+
+
 def get_social_links(username):
     """الحسابات المربوطة (انستقرام/تويتر/يوتيوب) عبر tikwm. قاموس فارغ عند الفشل."""
     try:
@@ -214,11 +238,24 @@ def get_social_links(username):
 
 
 def _enrich(username, info):
-    """إضافة دولة الحساب (من الفيديوهات) والحسابات المربوطة — best-effort."""
+    """إضافة دولة الحساب والحسابات المربوطة — best-effort.
+
+    أولاً: الدولة من أغلبية مناطق الفيديوهات (دقيقة).
+    وإن لم يكن للحساب فيديوهات: تقدير من أغلبية دول المتابَعات.
+    """
     region, count, total = get_account_region(username)
     if region:
         info["region"] = region
         info["region_confidence"] = f"{count}/{total}"
+        info["region_source"] = "videos"
+    else:
+        region, count, total = get_region_from_following(
+            info.get("user_id"), info.get("sec_uid")
+        )
+        if region:
+            info["region"] = region
+            info["region_confidence"] = f"{count}/{total}"
+            info["region_source"] = "following"
     info["social"] = get_social_links(username)
 
 
@@ -226,7 +263,7 @@ def get_user_info(username, prefer_browser=False, enrich=True):
     """
     يرجّع قاموس معلومات الحساب.
     prefer_browser=True يبدأ بالمتصفح مباشرة (الأضمن لكنه أبطأ).
-    enrich=True يضيف دولة الحساب (من الفيديوهات) والحسابات المربوطة.
+    enrich=True يضيف دولة الحساب والحسابات المربوطة.
     """
     username = username.lstrip("@").strip()
     if not username:
@@ -294,11 +331,17 @@ def format_report(info):
     def val(v, default="غير متوفر"):
         return v if v not in (None, "") else default
 
-    # دولة الحساب (من الفيديوهات) مع نسبة الثقة
+    # دولة الحساب مع مصدرها ونسبة الثقة
     if info.get("region"):
         region_line = country_label(info["region"])
-        if info.get("region_confidence"):
-            region_line += f"  ({info['region_confidence']} فيديو)"
+        conf = info.get("region_confidence")
+        src = info.get("region_source")
+        if src == "videos" and conf:
+            region_line += f"  (من الفيديوهات: {conf})"
+        elif src == "following" and conf:
+            region_line += f"  (تقديري من المتابَعات: {conf})"
+        elif conf:
+            region_line += f"  ({conf})"
     else:
         region_line = "غير متوفر"
 
