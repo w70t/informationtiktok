@@ -1,9 +1,9 @@
 """
 storage.py
 ----------
-تخزين أعضاء البوت في SQLite (بدون أي خادم خارجي) لاستخدامه في:
-  - حفظ الاسم واليوزر ولغة كل عضو.
-  - إرسال رسالة جماعية لاحقاً لكل الأعضاء.
+تخزين أعضاء البوت وقنوات الاشتراك في SQLite (بدون أي خادم خارجي):
+  - حفظ الاسم واليوزر ولغة كل عضو (للرسائل الجماعية).
+  - حفظ قنوات الاشتراك الإجباري (تُدار من لوحة الأدمن).
 الملف bot_data.db يُنشأ تلقائياً بجانب الكود.
 """
 
@@ -33,6 +33,25 @@ def init_db():
                 joined_at  TEXT
             )"""
         )
+        c.execute("CREATE TABLE IF NOT EXISTS channels (channel TEXT PRIMARY KEY)")
+
+
+# ---------------------------------------------------------------------------
+# قنوات الاشتراك الإجباري (تُدار من لوحة الأدمن)
+# ---------------------------------------------------------------------------
+def add_channel(channel):
+    with _lock, _conn() as c:
+        c.execute("INSERT OR IGNORE INTO channels (channel) VALUES (?)", (channel,))
+
+
+def remove_channel(channel):
+    with _lock, _conn() as c:
+        c.execute("DELETE FROM channels WHERE channel = ?", (channel,))
+
+
+def get_channels():
+    with _conn() as c:
+        return [r["channel"] for r in c.execute("SELECT channel FROM channels").fetchall()]
 
 
 def add_user(user_id, username, first_name):

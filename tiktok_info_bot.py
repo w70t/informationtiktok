@@ -3,9 +3,9 @@ tiktok_info_bot.py
 ------------------
 بوت تيليجرام لمعلومات حسابات تيك توك، مع:
   - ترحيب ثنائي اللغة (عربي/إنجليزي) واختيار اللغة.
-  - اشتراك إجباري في قنوات قبل استخدام البوت.
+  - اشتراك إجباري في قنوات (تُدار من لوحة الأدمن).
   - لوحة تحكم للأدمن (تظهر في قائمة الأوامر للأدمن فقط).
-  - حفظ أعضاء البوت في قاعدة بيانات + رسالة جماعية + تصدير الأعضاء.
+  - حفظ أعضاء البوت + رسالة جماعية + تصدير الأعضاء + إدارة القنوات.
   - دعم إرسال رابط فيديو لكشف دولة نشره.
 
 الإعداد في ملف .env بجانب هذا الملف:
@@ -13,7 +13,7 @@ tiktok_info_bot.py
     API_HASH=xxxxxxxx
     BOT_TOKEN=123456:ABC-xxxx
     ADMIN_ID=رقم_حسابك_الرقمي_في_تيليجرام
-    FORCED_CHANNELS=@channel1,@channel2     # اختياري (اتركه فارغاً لتعطيل الاشتراك الإجباري)
+    FORCED_CHANNELS=@channel1,@channel2     # اختياري (للبذر الأولي فقط؛ الإدارة من اللوحة)
     PREFER_BROWSER=false
 """
 
@@ -48,13 +48,24 @@ API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-FORCED_CHANNELS = [c.strip() for c in os.getenv("FORCED_CHANNELS", "").split(",") if c.strip()]
+# قنوات البدء من .env (تُستخدم للبذر الأولي فقط؛ الإدارة لاحقاً من لوحة الأدمن)
+FORCED_CHANNELS_ENV = [c.strip() for c in os.getenv("FORCED_CHANNELS", "").split(",") if c.strip()]
 PREFER_BROWSER = os.getenv("PREFER_BROWSER", "false").lower() == "true"
 
 app = Client("tiktok_info_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# الأدمن الذين ينتظرون كتابة الرسالة الجماعية
+# الأدمن الذين ينتظرون كتابة الرسالة الجماعية / إضافة قناة
 awaiting_broadcast = set()
+awaiting_channel = set()
+
+
+def normalize_channel(text):
+    """تحويل ما يُدخله الأدمن إلى صيغة @username."""
+    ch = text.strip().split()[0] if text.strip() else ""
+    for p in ("https://t.me/", "http://t.me/", "t.me/", "https://", "http://"):
+        ch = ch.replace(p, "")
+    ch = ch.lstrip("@").strip("/")
+    return "@" + ch if ch else ""
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +89,14 @@ T = {
         "admin_stats": "📊 الإحصائيات",
         "admin_broadcast": "📢 رسالة جماعية",
         "admin_export": "📤 تصدير الأعضاء",
+        "admin_channels": "📢 قنوات الاشتراك",
+        "channels_panel": "📢 قنوات الاشتراك الإجباري:\nاضغط 🗑 للحذف، أو ➕ لإضافة قناة.",
+        "no_channels": "لا توجد قنوات إجبارية حالياً.",
+        "btn_add_channel": "➕ إضافة قناة",
+        "btn_back": "🔙 رجوع",
+        "add_channel_prompt": "📢 أرسل يوزر القناة (مثل @channel).\n⚠️ تأكد أن البوت مشرف (أدمن) في القناة.\nأرسل /cancel للإلغاء.",
+        "channel_added": "✅ تمت إضافة القناة {ch}",
+        "channel_removed": "🗑 تم حذف القناة {ch}",
         "stats_text": (
             "📊 <b>إحصائيات الأعضاء</b>\n"
             "👥 الإجمالي: {total}\n"
@@ -108,6 +127,14 @@ T = {
         "admin_stats": "📊 Statistics",
         "admin_broadcast": "📢 Broadcast",
         "admin_export": "📤 Export members",
+        "admin_channels": "📢 Forced channels",
+        "channels_panel": "📢 Forced-subscription channels:\nTap 🗑 to remove, or ➕ to add a channel.",
+        "no_channels": "No forced channels currently.",
+        "btn_add_channel": "➕ Add channel",
+        "btn_back": "🔙 Back",
+        "add_channel_prompt": "📢 Send the channel username (e.g. @channel).\n⚠️ Make sure the bot is an admin in the channel.\nSend /cancel to cancel.",
+        "channel_added": "✅ Channel {ch} added",
+        "channel_removed": "🗑 Channel {ch} removed",
         "stats_text": (
             "📊 <b>Member statistics</b>\n"
             "👥 Total: {total}\n"
@@ -143,12 +170,22 @@ def lang_kb():
 
 def subscribe_kb(lang):
     rows = []
-    for i, ch in enumerate(FORCED_CHANNELS, 1):
+    for i, ch in enumerate(storage.get_channels(), 1):
         uname = ch.lstrip("@")
         rows.append([InlineKeyboardButton(
             f"{T[lang]['btn_subscribe']} {i}", url=f"https://t.me/{uname}"
         )])
     rows.append([InlineKeyboardButton(T[lang]["btn_check"], callback_data="check_sub")])
+    return InlineKeyboardMarkup(rows)
+
+
+def channels_kb(lang):
+    """لوحة إدارة قنوات الاشتراك الإجباري."""
+    rows = []
+    for ch in storage.get_channels():
+        rows.append([InlineKeyboardButton(f"🗑 {ch}", callback_data=f"delch:{ch}")])
+    rows.append([InlineKeyboardButton(T[lang]["btn_add_channel"], callback_data="adm:addch")])
+    rows.append([InlineKeyboardButton(T[lang]["btn_back"], callback_data="adm:back")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -162,15 +199,17 @@ def admin_kb(lang):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(T[lang]["admin_stats"], callback_data="adm:stats")],
         [InlineKeyboardButton(T[lang]["admin_broadcast"], callback_data="adm:bc")],
+        [InlineKeyboardButton(T[lang]["admin_channels"], callback_data="adm:channels")],
         [InlineKeyboardButton(T[lang]["admin_export"], callback_data="adm:export")],
     ])
 
 
 async def is_subscribed(client, user_id):
     """هل اشترك المستخدم في كل القنوات الإجبارية؟ (الأدمن دائماً نعم)."""
-    if not FORCED_CHANNELS or user_id == ADMIN_ID:
+    channels = storage.get_channels()
+    if not channels or user_id == ADMIN_ID:
         return True
-    for ch in FORCED_CHANNELS:
+    for ch in channels:
         try:
             member = await client.get_chat_member(ch, user_id)
             if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
@@ -234,6 +273,31 @@ async def cancel_handler(_, message):
     if uid in awaiting_broadcast:
         awaiting_broadcast.discard(uid)
         await message.reply_text(T[get_lang(uid)]["broadcast_cancel"])
+    awaiting_channel.discard(uid)
+
+
+# التقاط يوزر القناة عندما يكون الأدمن في وضع إضافة قناة
+def _awaiting_ch(_, __, m):
+    return (
+        bool(m.from_user)
+        and m.from_user.id in awaiting_channel
+        and not (m.text and m.text.startswith("/"))
+    )
+
+
+@app.on_message(filters.create(_awaiting_ch))
+async def channel_capture(_, message):
+    uid = message.from_user.id
+    awaiting_channel.discard(uid)
+    lang = get_lang(uid)
+    ch = normalize_channel(message.text or "")
+    if not ch or ch == "@":
+        await message.reply_text(T[lang]["bad_username"])
+        return
+    storage.add_channel(ch)
+    await message.reply_text(
+        T[lang]["channel_added"].format(ch=ch), reply_markup=channels_kb(lang)
+    )
 
 
 # التقاط الرسالة الجماعية: أي محتوى يرسله الأدمن وهو في وضع الانتظار (عدا الأوامر)
@@ -343,12 +407,38 @@ async def admin_callback(_, cb):
         awaiting_broadcast.add(cb.from_user.id)
         await cb.answer()
         await cb.message.edit_text(T[lang]["broadcast_prompt"])
+    elif action == "channels":
+        await cb.answer()
+        channels = storage.get_channels()
+        head = T[lang]["channels_panel"] if channels else T[lang]["no_channels"]
+        await cb.message.edit_text(head, reply_markup=channels_kb(lang))
+    elif action == "addch":
+        awaiting_channel.add(cb.from_user.id)
+        await cb.answer()
+        await cb.message.edit_text(T[lang]["add_channel_prompt"])
+    elif action == "back":
+        await cb.answer()
+        await cb.message.edit_text(T[lang]["admin_panel"], reply_markup=admin_kb(lang))
     elif action == "export":
         await cb.answer()
         data = storage.export_users_text().encode("utf-8")
         doc = io.BytesIO(data)
         doc.name = "members.txt"
         await cb.message.reply_document(doc, caption=T[lang]["export_caption"])
+
+
+@app.on_callback_query(filters.regex(r"^delch:"))
+async def delete_channel_callback(_, cb):
+    if cb.from_user.id != ADMIN_ID:
+        await cb.answer("⛔️", show_alert=True)
+        return
+    lang = get_lang(cb.from_user.id)
+    ch = cb.data.split(":", 1)[1]
+    storage.remove_channel(ch)
+    await cb.answer(T[lang]["channel_removed"].format(ch=ch))
+    channels = storage.get_channels()
+    head = T[lang]["channels_panel"] if channels else T[lang]["no_channels"]
+    await cb.message.edit_text(head, reply_markup=channels_kb(lang))
 
 
 @app.on_callback_query(filters.regex(r"^r:"))
@@ -395,4 +485,8 @@ if __name__ == "__main__":
     if not ADMIN_ID:
         print("⚠️ تنبيه: ADMIN_ID غير محدّد — لوحة الأدمن والرسالة الجماعية لن تعمل.")
     storage.init_db()
+    # بذر القنوات من .env مرة واحدة فقط إن كانت قاعدة البيانات فارغة (الإدارة لاحقاً من اللوحة)
+    if FORCED_CHANNELS_ENV and not storage.get_channels():
+        for ch in FORCED_CHANNELS_ENV:
+            storage.add_channel(ch if ch.startswith("@") else "@" + ch)
     app.run(main())
