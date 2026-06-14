@@ -14,6 +14,7 @@ tiktok_info_bot.py
   4) شغّل:  python tiktok_info_bot.py
 """
 
+import asyncio
 import os
 
 from dotenv import load_dotenv
@@ -69,11 +70,12 @@ async def info_handler(_, message):
 
     status = await message.reply_text("⏳ يتم جلب المعلومات...")
     try:
-        info = get_user_info(username, prefer_browser=PREFER_BROWSER)
+        # الجلب متزامن (requests + قد يستخدم asyncio داخلياً) → نشغّله في thread
+        info = await asyncio.to_thread(get_user_info, username, PREFER_BROWSER)
         report = format_report(info)
 
         # محاولة إرسال صورة البروفايل مع التقرير كتعليق
-        avatar = download_avatar(info.get("avatar"))
+        avatar = await asyncio.to_thread(download_avatar, info.get("avatar"))
         kb = refresh_kb(username)
         if avatar:
             photo = io.BytesIO(avatar)
@@ -100,7 +102,7 @@ async def refresh_handler(_, callback_query):
     username = callback_query.data.split(":", 1)[1]
     await callback_query.answer("⏳ يتم التحديث...")
     try:
-        info = get_user_info(username, prefer_browser=PREFER_BROWSER)
+        info = await asyncio.to_thread(get_user_info, username, PREFER_BROWSER)
         report = format_report(info)
         kb = refresh_kb(username)
         if callback_query.message.photo:
