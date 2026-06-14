@@ -2,7 +2,8 @@
 __pycache__/
 *.pyc
 
-# أسرار وجلسات (لا تُرفع أبداً)
+# أسرار وجلسات وقاعدة بيانات (لا تُرفع أبداً)
 .env
 *.session
 *.session-journal
+bot_data.db
