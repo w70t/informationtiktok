@@ -8,15 +8,19 @@ tiktok_info.py
   (A) requests  : خفيفة وسريعة، تعمل من اتصال منزلي/جوال (تُحجب من سيرفرات datacenter).
   (B) TikTokApi : تشغّل متصفح Chromium حقيقي وتولّد الكوكيز/التواقيع تلقائياً (الأضمن).
 
-كل الحقول مأخوذة من كائن user الذي يضعه تيك توك في صفحة البروفايل أو في
-نقطة /api/user/detail/ — وهي بيانات عامة، ليست اختراقاً.
+دولة الحساب تُستخرج من أغلبية مناطق فيديوهاته عبر tikwm (مجاني بدون مفتاح).
+كل الحقول بيانات عامة، ليست اختراقاً.
 """
 
 import json
 import re
+from collections import Counter
 from datetime import datetime, timezone
 
 import requests
+
+# API عام مجاني بدون مفتاح، نستخدمه لدولة الحساب (من الفيديوهات) والحسابات المربوطة
+TIKWM_BASE = "https://www.tikwm.com"
 
 # هيدرز متصفح حقيقي لتقليل الحجب
 BROWSER_HEADERS = {
@@ -167,12 +171,62 @@ def _get_via_tiktokapi(username):
 
 
 # ---------------------------------------------------------------------------
-# الواجهة العامة
+# دولة الحساب والحسابات المربوطة (tikwm — مجاني بدون مفتاح)
 # ---------------------------------------------------------------------------
-def get_user_info(username, prefer_browser=False):
+def get_account_region(username, max_videos=30):
+    """
+    دولة الحساب الحقيقية = أغلبية مناطق فيديوهاته (عبر tikwm، مجاناً بدون مفتاح).
+    يرجّع (رمز_الدولة, عدد_الأغلبية, الإجمالي). يعطي (None, 0, 0) للحسابات بلا فيديوهات.
+    حقل region لكل فيديو يعكس دولة تسجيل الحساب (تأكدنا: حسابات عراقية = IQ، أمريكية = US).
+    """
+    try:
+        r = requests.get(
+            f"{TIKWM_BASE}/api/user/posts",
+            params={"unique_id": username, "count": max_videos},
+            timeout=25,
+        )
+        videos = (r.json().get("data") or {}).get("videos") or []
+        regions = [v.get("region") for v in videos if v.get("region")]
+        if not regions:
+            return None, 0, 0
+        top, count = Counter(regions).most_common(1)[0]
+        return top, count, len(regions)
+    except (requests.RequestException, ValueError):
+        return None, 0, 0
+
+
+def get_social_links(username):
+    """الحسابات المربوطة (انستقرام/تويتر/يوتيوب) عبر tikwm. قاموس فارغ عند الفشل."""
+    try:
+        r = requests.get(
+            f"{TIKWM_BASE}/api/user/info",
+            params={"unique_id": username},
+            timeout=20,
+        )
+        u = (r.json().get("data") or {}).get("user") or {}
+        return {
+            "instagram": u.get("ins_id") or None,
+            "twitter": u.get("twitter_id") or None,
+            "youtube": u.get("youtube_channel_title") or None,
+        }
+    except (requests.RequestException, ValueError):
+        return {}
+
+
+def _enrich(username, info):
+    """إضافة دولة الحساب (من الفيديوهات) والحسابات المربوطة — best-effort."""
+    region, count, total = get_account_region(username)
+    if region:
+        info["region"] = region
+        info["region_confidence"] = f"{count}/{total}"
+    info["social"] = get_social_links(username)
+
+
+def get_user_info(username, prefer_browser=False, enrich=True):
     """
     يرجّع قاموس معلومات الحساب.
     prefer_browser=True يبدأ بالمتصفح مباشرة (الأضمن لكنه أبطأ).
+    enrich=True يضيف دولة الحساب (من الفيديوهات) والحسابات المربوطة.
     """
     username = username.lstrip("@").strip()
     if not username:
@@ -180,16 +234,21 @@ def get_user_info(username, prefer_browser=False):
 
     if not prefer_browser:
         try:
-            return _get_via_requests(username)
+            info = _get_via_requests(username)
         except Exception as light_err:
             try:
-                return _get_via_tiktokapi(username)
+                info = _get_via_tiktokapi(username)
             except ImportError:
                 raise RuntimeError(
                     f"الطريقة الخفيفة فشلت ({light_err}). "
                     "ثبّت TikTokApi للطريقة المضمونة: pip install TikTokApi && python -m playwright install chromium"
                 )
-    return _get_via_tiktokapi(username)
+    else:
+        info = _get_via_tiktokapi(username)
+
+    if enrich:
+        _enrich(username, info)
+    return info
 
 
 def download_avatar(url):
@@ -205,6 +264,28 @@ def download_avatar(url):
     return None
 
 
+COUNTRY_AR = {
+    "IQ": "العراق", "SA": "السعودية", "DE": "ألمانيا", "US": "أمريكا",
+    "EG": "مصر", "AE": "الإمارات", "KW": "الكويت", "QA": "قطر",
+    "BH": "البحرين", "OM": "عُمان", "JO": "الأردن", "SY": "سوريا",
+    "LB": "لبنان", "PS": "فلسطين", "YE": "اليمن", "MA": "المغرب",
+    "DZ": "الجزائر", "TN": "تونس", "LY": "ليبيا", "SD": "السودان",
+    "TR": "تركيا", "GB": "بريطانيا", "FR": "فرنسا", "IT": "إيطاليا",
+    "ES": "إسبانيا", "NL": "هولندا", "SE": "السويد", "CA": "كندا",
+    "IN": "الهند", "PK": "باكستان", "ID": "إندونيسيا", "RU": "روسيا",
+}
+
+
+def country_label(code):
+    """رمز الدولة → علم + اسم عربي، مثل: 🇮🇶 العراق (IQ)."""
+    if not code or len(code) != 2 or not code.isalpha():
+        return code or "غير متوفر"
+    code = code.upper()
+    flag = "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code)
+    name = COUNTRY_AR.get(code)
+    return f"{flag} {name} ({code})" if name else f"{flag} {code}"
+
+
 def format_report(info):
     """تنسيق التقرير بالعربي بأسلوب البوتات المتداولة."""
     def yn(v):
@@ -213,6 +294,14 @@ def format_report(info):
     def val(v, default="غير متوفر"):
         return v if v not in (None, "") else default
 
+    # دولة الحساب (من الفيديوهات) مع نسبة الثقة
+    if info.get("region"):
+        region_line = country_label(info["region"])
+        if info.get("region_confidence"):
+            region_line += f"  ({info['region_confidence']} فيديو)"
+    else:
+        region_line = "غير متوفر"
+
     lines = [
         "📋 <b>معلومات حساب تيك توك</b>",
         "━━━━━━━━━━━━━━━",
@@ -220,7 +309,7 @@ def format_report(info):
         f"📛 الاسم: {val(info['nickname'])}",
         f"🆔 الآيدي: <code>{val(info['user_id'])}</code>",
         f"📅 تاريخ الإنشاء: {val(info['create_date'])}",
-        f"🌍 دولة الحساب: {val(info['region'])}",
+        f"🌍 دولة الحساب: {region_line}",
         f"🗣 لغة الحساب: {val(info['language'])}",
         f"✔️ موثّق: {yn(info['verified'])}",
         f"🔒 حساب خاص: {yn(info['private'])}",
@@ -232,6 +321,20 @@ def format_report(info):
         f"❤️ الإعجابات: {val(info['hearts'])}",
         f"🎬 الفيديوهات: {val(info['videos'])}",
     ]
+
+    # الحسابات المربوطة
+    social = info.get("social") or {}
+    soc_lines = []
+    if social.get("instagram"):
+        soc_lines.append(f"📷 انستقرام: {social['instagram']}")
+    if social.get("twitter"):
+        soc_lines.append(f"🐦 تويتر: {social['twitter']}")
+    if social.get("youtube"):
+        soc_lines.append(f"▶️ يوتيوب: {social['youtube']}")
+    if soc_lines:
+        lines.append("━━━━━━━━━━━━━━━")
+        lines.extend(soc_lines)
+
     if info.get("signature"):
         lines.append("━━━━━━━━━━━━━━━")
         lines.append(f"📝 البايو: {info['signature']}")
