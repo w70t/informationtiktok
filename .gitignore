@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.pyc
+
+# أسرار وجلسات (لا تُرفع أبداً)
+.env
+*.session
+*.session-journal
