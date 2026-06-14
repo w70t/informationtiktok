@@ -6,6 +6,7 @@ tiktok_info_bot.py
   - اشتراك إجباري في قنوات قبل استخدام البوت.
   - لوحة تحكم للأدمن (إحصائيات + رسالة جماعية + تصدير الأعضاء).
   - حفظ أعضاء البوت (الاسم/اليوزر/اللغة) في قاعدة بيانات.
+  - دعم إرسال رابط فيديو لكشف دولة نشره.
 
 الإعداد في ملف .env بجانب هذا الملف:
     API_ID=123456
@@ -27,7 +28,13 @@ from pyrogram.errors import FloodWait, UserNotParticipant
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 import storage
-from tiktok_info import download_avatar, format_report, get_user_info
+from tiktok_info import (
+    download_avatar,
+    format_report,
+    format_video_report,
+    get_user_info,
+    get_video_region,
+)
 
 load_dotenv()
 
@@ -51,7 +58,7 @@ T = {
     "ar": {
         "lang_set": "✅ تم اختيار العربية.",
         "welcome": "👋 أهلاً بك في بوت معلومات تيك توك!",
-        "send_username": "أرسل يوزر أي حساب تيك توك (بدون @) وسأعطيك كل معلوماته 🌍",
+        "send_username": "أرسل يوزر أي حساب تيك توك (بدون @)، أو رابط فيديو لمعرفة دولة نشره 🌍",
         "must_subscribe": "⚠️ للوصول إلى مزايا البوت، اشترك في القنوات التالية ثم اضغط «✅ اشتركت».",
         "subscribed_ok": "✅ تم التحقق من اشتراكك! أرسل الآن يوزر أي حساب تيك توك.",
         "not_subscribed": "❌ لم تشترك في كل القنوات بعد. اشترك ثم اضغط «✅ اشتركت».",
@@ -81,7 +88,7 @@ T = {
     "en": {
         "lang_set": "✅ English selected.",
         "welcome": "👋 Welcome to the TikTok Info Bot!",
-        "send_username": "Send any TikTok username (without @) and I'll give you all its info 🌍",
+        "send_username": "Send any TikTok username (without @), or a video link to find where it was posted 🌍",
         "must_subscribe": "⚠️ To use the bot, subscribe to the channels below then tap “✅ I subscribed”.",
         "subscribed_ok": "✅ Subscription verified! Now send any TikTok username.",
         "not_subscribed": "❌ You haven't joined all channels yet. Subscribe then tap “✅ I subscribed”.",
@@ -266,7 +273,20 @@ async def username_handler(client, message):
         await message.reply_text(T[lang]["must_subscribe"], reply_markup=subscribe_kb(lang))
         return
 
-    username = message.text.strip().lstrip("@")
+    text = message.text.strip()
+    low = text.lower()
+
+    # رابط فيديو → دولة نشر الفيديو
+    if "tiktok.com" in low or low.startswith("http"):
+        status = await message.reply_text(T[lang]["fetching"])
+        try:
+            v = await asyncio.to_thread(get_video_region, text)
+            await status.edit_text(format_video_report(v, lang), disable_web_page_preview=True)
+        except Exception as e:
+            await status.edit_text(T[lang]["fetch_failed"].format(e=e))
+        return
+
+    username = text.lstrip("@")
     if not username or " " in username:
         await message.reply_text(T[lang]["bad_username"])
         return
