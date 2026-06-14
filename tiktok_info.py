@@ -9,8 +9,8 @@ tiktok_info.py
   (C) tikwm     : مصدر مجاني ثابت حين يحجب تيك توك الطلب المباشر.
   (B) TikTokApi : متصفح Chromium حقيقي (ملاذ أخير، اختياري).
 
-دولة الحساب تُستخرج من أغلبية مناطق فيديوهاته عبر tikwm (مجاني بدون مفتاح).
-وللحسابات بلا فيديوهات: تقدير من أغلبية دول المتابَعات.
+دولة الحساب تُستخرج من أغلبية مناطق فيديوهاته عبر tikwm (دقيقة).
+وللحسابات بلا فيديوهات: يوجّه العضو لإرسال رابط فيديو لمعرفة دولة نشره.
 كل الحقول بيانات عامة، ليست اختراقاً.
 """
 
@@ -224,8 +224,8 @@ def get_account_region(username, max_videos=30):
 
 def get_region_from_following(user_id, sec_uid=None, max_users=50):
     """
-    تقدير دولة الحساب من أغلبية دول الحسابات التي يتابعها (للحسابات بلا فيديوهات).
-    قائمة tikwm/following ترجّع region لكل حساب متابَع. أقل دقة من الفيديوهات (تقديري).
+    تقدير دولة الحساب من أغلبية دول الحسابات التي يتابعها (غير مستخدم حالياً).
+    قائمة tikwm/following ترجّع region لكل حساب متابَع. تقديري (أقل دقة).
     """
     if not user_id:
         return None, 0, 0
@@ -264,25 +264,37 @@ def get_social_links(username):
 
 
 def _enrich(username, info):
-    """إضافة دولة الحساب والحسابات المربوطة — best-effort.
-
-    أولاً: الدولة من أغلبية مناطق الفيديوهات (دقيقة).
-    وإن لم يكن للحساب فيديوهات: تقدير من أغلبية دول المتابَعات.
-    """
+    """إضافة دولة الحساب (من الفيديوهات فقط — دقيقة) والحسابات المربوطة."""
     region, count, total = get_account_region(username)
     if region:
         info["region"] = region
         info["region_confidence"] = f"{count}/{total}"
         info["region_source"] = "videos"
-    else:
-        region, count, total = get_region_from_following(
-            info.get("user_id"), info.get("sec_uid")
-        )
-        if region:
-            info["region"] = region
-            info["region_confidence"] = f"{count}/{total}"
-            info["region_source"] = "following"
     info["social"] = get_social_links(username)
+
+
+def get_video_region(url):
+    """دولة نشر فيديو معيّن من رابطه (عبر tikwm، مجاناً بدون مفتاح)."""
+    r = requests.get(f"{TIKWM_BASE}/api/", params={"url": url}, timeout=25)
+    d = r.json() or {}
+    if d.get("code") != 0:
+        raise RuntimeError("تعذّر قراءة الفيديو — تأكد من الرابط")
+    data = d.get("data") or {}
+    author = data.get("author") or {}
+    created = None
+    ct = data.get("create_time")
+    if ct:
+        try:
+            created = datetime.fromtimestamp(int(ct), tz=timezone.utc).strftime("%Y-%m-%d")
+        except (ValueError, TypeError, OSError):
+            created = None
+    return {
+        "region": data.get("region"),
+        "author": author.get("unique_id"),
+        "author_nick": author.get("nickname"),
+        "title": data.get("title") or "",
+        "create_date": created,
+    }
 
 
 def get_user_info(username, prefer_browser=False, enrich=True):
@@ -448,6 +460,48 @@ def format_report(info, lang="ar"):
     if info.get("signature"):
         lines.append(sep)
         lines.append(f"{L['bio']}: {info['signature']}")
+
+    # حساب بدون فيديوهات: لا يمكن تحديد الدولة بدقة → نوجّهه لإرسال رابط فيديو
+    if not info.get("region"):
+        lines.append(sep)
+        lines.append(
+            "ℹ️ هذا الحساب بدون فيديوهات، فلا يمكن تحديد دولته بدقة 100%.\n"
+            "أرسل رابط أي فيديو لمعرفة دولة نشره." if ar else
+            "ℹ️ This account has no videos, so its country can't be determined with 100% accuracy.\n"
+            "Send any video link to find out where it was posted."
+        )
+    return "\n".join(lines)
+
+
+def format_video_report(v, lang="ar"):
+    """تقرير دولة نشر فيديو من رابطه."""
+    ar = lang != "en"
+    na = "غير متوفر" if ar else "N/A"
+
+    def val(x):
+        return x if x not in (None, "") else na
+
+    sep = "━━━━━━━━━━━━━━━"
+    if ar:
+        lines = [
+            "🎬 <b>معلومات نشر الفيديو</b>", sep,
+            f"🌍 دولة النشر: {country_label(v.get('region'), lang)}",
+            f"👤 الناشر: <code>@{val(v.get('author'))}</code>",
+            f"📛 الاسم: {val(v.get('author_nick'))}",
+            f"📅 تاريخ النشر: {val(v.get('create_date'))}",
+        ]
+        if v.get("title"):
+            lines += [sep, f"📝 الوصف: {v['title']}"]
+    else:
+        lines = [
+            "🎬 <b>Video posting info</b>", sep,
+            f"🌍 Posted from: {country_label(v.get('region'), lang)}",
+            f"👤 Author: <code>@{val(v.get('author'))}</code>",
+            f"📛 Name: {val(v.get('author_nick'))}",
+            f"📅 Posted: {val(v.get('create_date'))}",
+        ]
+        if v.get("title"):
+            lines += [sep, f"📝 Caption: {v['title']}"]
     return "\n".join(lines)
 
 
