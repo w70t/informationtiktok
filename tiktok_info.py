@@ -4,9 +4,10 @@ tiktok_info.py
 جلب معلومات حساب تيك توك العامة (الدولة، اللغة، تاريخ الإنشاء، الإحصائيات...)
 بدون أي API مدفوع. يعتمد على البيانات العامة التي يُرجِعها تيك توك نفسه.
 
-طريقتان:
-  (A) requests  : خفيفة وسريعة، تعمل من اتصال منزلي/جوال (تُحجب من سيرفرات datacenter).
-  (B) TikTokApi : تشغّل متصفح Chromium حقيقي وتولّد الكوكيز/التواقيع تلقائياً (الأضمن).
+مصادر المعلومات الأساسية (بالترتيب):
+  (A) requests  : طلب خفيف مباشر لتيك توك.
+  (C) tikwm     : مصدر مجاني ثابت حين يحجب تيك توك الطلب المباشر.
+  (B) TikTokApi : متصفح Chromium حقيقي (ملاذ أخير، اختياري).
 
 دولة الحساب تُستخرج من أغلبية مناطق فيديوهاته عبر tikwm (مجاني بدون مفتاح).
 وللحسابات بلا فيديوهات: تقدير من أغلبية دول المتابَعات.
@@ -70,6 +71,15 @@ def _extract_universal_json(html):
     return json.loads(m.group(1))
 
 
+def _extract_bio_link(bio):
+    """رابط البايو قد يكون dict (تيك توك) أو str (tikwm) أو None."""
+    if isinstance(bio, dict):
+        return bio.get("link") or None
+    if isinstance(bio, str):
+        return bio or None
+    return None
+
+
 def _normalize(user, stats):
     """تحويل كائنات تيك توك الخام إلى قاموس موحّد."""
     user = user or {}
@@ -94,7 +104,7 @@ def _normalize(user, stats):
         "verified": user.get("verified", False),
         "private": user.get("privateAccount", False),
         "signature": user.get("signature", ""),
-        "bio_link": (user.get("bioLink") or {}).get("link"),
+        "bio_link": _extract_bio_link(user.get("bioLink")),
         "avatar": user.get("avatarLarger") or user.get("avatarMedium"),
         "create_date": created.strftime("%Y-%m-%d") if created else None,
         "create_datetime_utc": created.isoformat() if created else None,
@@ -153,7 +163,7 @@ def _get_via_requests(username):
 
 
 # ---------------------------------------------------------------------------
-# الطريقة B: TikTokApi (متصفح حقيقي) — الأضمن
+# الطريقة B: TikTokApi (متصفح حقيقي) — ملاذ أخير
 # ---------------------------------------------------------------------------
 def _get_via_tiktokapi(username):
     # تُستورد داخلياً حتى لا تكون إلزامية
@@ -169,6 +179,22 @@ def _get_via_tiktokapi(username):
             return _normalize(info.get("user"), info.get("stats"))
 
     return asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# الطريقة C: tikwm (احتياطية للمعلومات الأساسية — تعمل حين يحجب تيك توك طلبنا)
+# ---------------------------------------------------------------------------
+def _get_via_tikwm(username):
+    r = requests.get(
+        f"{TIKWM_BASE}/api/user/info",
+        params={"unique_id": username},
+        timeout=25,
+    )
+    data = (r.json() or {}).get("data") or {}
+    user = data.get("user") or {}
+    if not (user.get("uniqueId") or user.get("id")):
+        raise RuntimeError("الحساب غير موجود")
+    return _normalize(user, data.get("stats"))
 
 
 # ---------------------------------------------------------------------------
@@ -272,14 +298,18 @@ def get_user_info(username, prefer_browser=False, enrich=True):
     if not prefer_browser:
         try:
             info = _get_via_requests(username)
-        except Exception as light_err:
+        except Exception:
+            # تيك توك حجب طلبنا المباشر → نجرّب tikwm (مصدر مجاني ثابت)
             try:
-                info = _get_via_tiktokapi(username)
-            except ImportError:
-                raise RuntimeError(
-                    f"الطريقة الخفيفة فشلت ({light_err}). "
-                    "ثبّت TikTokApi للطريقة المضمونة: pip install TikTokApi && python -m playwright install chromium"
-                )
+                info = _get_via_tikwm(username)
+            except Exception as tikwm_err:
+                # كملاذ أخير: المتصفح الحقيقي (يتطلب TikTokApi + chromium)
+                try:
+                    info = _get_via_tiktokapi(username)
+                except ImportError:
+                    raise RuntimeError(
+                        f"تعذّر جلب الحساب (قد يكون غير موجود أو خاص): {tikwm_err}"
+                    )
     else:
         info = _get_via_tiktokapi(username)
 
