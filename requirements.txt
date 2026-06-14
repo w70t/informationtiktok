@@ -1,0 +1,10 @@
+# متطلبات بوت معلومات تيك توك
+pyrogram
+tgcrypto
+python-dotenv
+requests
+
+# الطريقة المضمونة (تتجاوز حجب 403) — اختيارية لكن موصى بها:
+# بعد التثبيت شغّل أيضاً:  python -m playwright install chromium
+TikTokApi
+playwright
