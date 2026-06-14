@@ -183,6 +183,19 @@ def get_user_info(username, prefer_browser=False):
     return _get_via_tiktokapi(username)
 
 
+def download_avatar(url):
+    """تحميل صورة البروفايل كبايتات. يرجّع None عند الفشل."""
+    if not url:
+        return None
+    try:
+        r = requests.get(url, headers=BROWSER_HEADERS, timeout=15)
+        if r.status_code == 200 and r.content:
+            return r.content
+    except requests.RequestException:
+        pass
+    return None
+
+
 def format_report(info):
     """تنسيق التقرير بالعربي بأسلوب البوتات المتداولة."""
     def yn(v):

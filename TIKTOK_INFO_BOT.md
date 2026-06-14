@@ -51,6 +51,33 @@ python tiktok_info_bot.py
 
 ---
 
+## 🍓 التشغيل على Raspberry Pi 5 (8GB)
+
+الـPi مثالي لهذا البوت لأن عنوانه IP منزلي عادي، فالطريقة الخفيفة (`requests`) تعمل
+بدون حجب غالباً — اترك `PREFER_BROWSER=false`.
+
+```bash
+# 1) تأكد أن النظام 64-bit
+uname -m          # يجب أن يظهر: aarch64
+
+# 2) المتطلبات
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements_tiktok_info.txt
+
+# 3) (اختياري) الطريقة المضمونة بالمتصفح — مدعومة على ARM64
+python -m playwright install chromium
+sudo apt install -y chromium-browser chromium-codecs-ffmpeg   # تبعيات Pi
+
+# 4) شغّل
+python tiktok_info_bot.py
+```
+
+💡 لتشغيله دائماً في الخلفية على الـPi استخدم `screen` أو خدمة systemd.
+وإن واجهت 403 (نادراً على Pi) فعّل `PREFER_BROWSER=true` في `.env`.
+
+---
+
 ## 🧪 تجربة سريعة من الطرفية (بدون تيليجرام)
 ```bash
 python tiktok_info.py tiktok

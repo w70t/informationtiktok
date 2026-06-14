@@ -19,7 +19,9 @@ import os
 from dotenv import load_dotenv
 from pyrogram import Client, filters
 
-from tiktok_info import get_user_info, format_report
+import io
+
+from tiktok_info import get_user_info, format_report, download_avatar
 
 load_dotenv()
 
@@ -60,9 +62,22 @@ async def info_handler(_, message):
     status = await message.reply_text("⏳ يتم جلب المعلومات...")
     try:
         info = get_user_info(username, prefer_browser=PREFER_BROWSER)
-        await status.edit_text(
-            format_report(info), disable_web_page_preview=True
-        )
+        report = format_report(info)
+
+        # محاولة إرسال صورة البروفايل مع التقرير كتعليق
+        avatar = download_avatar(info.get("avatar"))
+        if avatar:
+            photo = io.BytesIO(avatar)
+            photo.name = f"{username}.jpg"
+            if len(report) <= 1024:
+                await message.reply_photo(photo=photo, caption=report)
+            else:
+                # التقرير أطول من حد التعليق: نرسل الصورة ثم النص منفصلاً
+                await message.reply_photo(photo=photo)
+                await message.reply_text(report, disable_web_page_preview=True)
+            await status.delete()
+        else:
+            await status.edit_text(report, disable_web_page_preview=True)
     except Exception as e:
         await status.edit_text(f"❌ تعذّر جلب المعلومات: {e}")
 
