@@ -25,7 +25,7 @@
 
 ### 1) تثبيت المكتبات
 ```bash
-pip install -r requirements_tiktok_info.txt
+pip install -r requirements.txt
 # للطريقة المضمونة:
 python -m playwright install chromium
 ```
@@ -63,7 +63,7 @@ uname -m          # يجب أن يظهر: aarch64
 # 2) المتطلبات
 sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements_tiktok_info.txt
+pip install -r requirements.txt
 
 # 3) (اختياري) الطريقة المضمونة بالمتصفح — مدعومة على ARM64
 python -m playwright install chromium

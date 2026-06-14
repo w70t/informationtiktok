@@ -1,3 +1,3 @@
 #!/bin/bash
-echo "🚀 Starting Bot..."
-python3 bot.py
+echo "🚀 تشغيل بوت معلومات تيك توك..."
+python3 tiktok_info_bot.py
