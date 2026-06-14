@@ -69,7 +69,16 @@ def _normalize(user, stats):
     """تحويل كائنات تيك توك الخام إلى قاموس موحّد."""
     user = user or {}
     stats = stats or {}
-    created = decode_create_time(user.get("id"))
+    # تاريخ الإنشاء: نفضّل حقل createTime الدقيق، وإلا نحسبه من الآيدي
+    created = None
+    ct = user.get("createTime")
+    if ct:
+        try:
+            created = datetime.fromtimestamp(int(ct), tz=timezone.utc)
+        except (ValueError, TypeError, OSError):
+            created = None
+    if not created:
+        created = decode_create_time(user.get("id"))
     return {
         "username": user.get("uniqueId"),
         "nickname": user.get("nickname"),
