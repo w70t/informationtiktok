@@ -4,8 +4,8 @@ tiktok_info_bot.py
 بوت تيليجرام لمعلومات حسابات تيك توك، مع:
   - ترحيب ثنائي اللغة (عربي/إنجليزي) واختيار اللغة.
   - اشتراك إجباري في قنوات قبل استخدام البوت.
-  - لوحة تحكم للأدمن (إحصائيات + رسالة جماعية + تصدير الأعضاء).
-  - حفظ أعضاء البوت (الاسم/اليوزر/اللغة) في قاعدة بيانات.
+  - لوحة تحكم للأدمن (تظهر في قائمة الأوامر للأدمن فقط).
+  - حفظ أعضاء البوت في قاعدة بيانات + رسالة جماعية + تصدير الأعضاء.
   - دعم إرسال رابط فيديو لكشف دولة نشره.
 
 الإعداد في ملف .env بجانب هذا الملف:
@@ -22,10 +22,16 @@ import io
 import os
 
 from dotenv import load_dotenv
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus
 from pyrogram.errors import FloodWait, UserNotParticipant
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import (
+    BotCommand,
+    BotCommandScopeChat,
+    BotCommandScopeDefault,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 
 import storage
 from tiktok_info import (
@@ -355,11 +361,38 @@ async def refresh_callback(_, cb):
         await cb.answer(str(e)[:180], show_alert=True)
 
 
+async def setup_commands():
+    """يجعل /admin يظهر في قائمة أوامر البوت للأدمن فقط، و/start للجميع."""
+    await app.set_bot_commands(
+        [BotCommand("start", "بدء البوت / Start")],
+        scope=BotCommandScopeDefault(),
+    )
+    if ADMIN_ID:
+        try:
+            await app.set_bot_commands(
+                [
+                    BotCommand("start", "بدء البوت"),
+                    BotCommand("admin", "🛠 لوحة تحكم الأدمن"),
+                    BotCommand("cancel", "إلغاء"),
+                ],
+                scope=BotCommandScopeChat(chat_id=ADMIN_ID),
+            )
+        except Exception as e:
+            print(f"⚠️ تعذّر ضبط أوامر الأدمن: {e}")
+
+
+async def main():
+    await app.start()
+    await setup_commands()
+    print("🚀 بوت معلومات تيك توك يعمل الآن...")
+    await idle()
+    await app.stop()
+
+
 if __name__ == "__main__":
     if not (API_ID and API_HASH and BOT_TOKEN):
         raise SystemExit("❌ أكمل الإعداد في .env (API_ID, API_HASH, BOT_TOKEN)")
     if not ADMIN_ID:
         print("⚠️ تنبيه: ADMIN_ID غير محدّد — لوحة الأدمن والرسالة الجماعية لن تعمل.")
     storage.init_db()
-    print("🚀 بوت معلومات تيك توك يعمل الآن...")
-    app.run()
+    app.run(main())
