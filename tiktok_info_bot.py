@@ -4,7 +4,7 @@ tiktok_info_bot.py
 بوت تيليجرام لمعلومات حسابات تيك توك، مع:
   - ترحيب ثنائي اللغة (عربي/إنجليزي) واختيار اللغة.
   - اشتراك إجباري في قنوات قبل استخدام البوت.
-  - لوحة تحكم للأدمن (إحصائيات + رسالة جماعية لكل الأعضاء).
+  - لوحة تحكم للأدمن (إحصائيات + رسالة جماعية + تصدير الأعضاء).
   - حفظ أعضاء البوت (الاسم/اليوزر/اللغة) في قاعدة بيانات.
 
 الإعداد في ملف .env بجانب هذا الملف:
@@ -64,7 +64,15 @@ T = {
         "admin_panel": "🛠 لوحة تحكم الأدمن",
         "admin_stats": "📊 الإحصائيات",
         "admin_broadcast": "📢 رسالة جماعية",
-        "stats_text": "👥 عدد أعضاء البوت: {n}",
+        "admin_export": "📤 تصدير الأعضاء",
+        "stats_text": (
+            "📊 <b>إحصائيات الأعضاء</b>\n"
+            "👥 الإجمالي: {total}\n"
+            "🆕 اليوم: {today}\n"
+            "📅 آخر 7 أيام: {week}\n"
+            "🇸🇦 عربي: {ar}  •  🇬🇧 إنجليزي: {en}"
+        ),
+        "export_caption": "📤 قائمة أعضاء البوت",
         "broadcast_prompt": "📢 أرسل الآن الرسالة (نص/صورة/أي محتوى) وسأرسلها لكل الأعضاء.\nأرسل /cancel للإلغاء.",
         "broadcast_sending": "⏳ جاري الإرسال...",
         "broadcast_done": "✅ تم الإرسال إلى {ok} عضو • فشل {fail}.",
@@ -86,7 +94,15 @@ T = {
         "admin_panel": "🛠 Admin Panel",
         "admin_stats": "📊 Statistics",
         "admin_broadcast": "📢 Broadcast",
-        "stats_text": "👥 Bot members: {n}",
+        "admin_export": "📤 Export members",
+        "stats_text": (
+            "📊 <b>Member statistics</b>\n"
+            "👥 Total: {total}\n"
+            "🆕 Today: {today}\n"
+            "📅 Last 7 days: {week}\n"
+            "🇸🇦 Arabic: {ar}  •  🇬🇧 English: {en}"
+        ),
+        "export_caption": "📤 Bot members list",
         "broadcast_prompt": "📢 Now send the message (text/photo/any content) and I'll send it to all members.\nSend /cancel to cancel.",
         "broadcast_sending": "⏳ Sending...",
         "broadcast_done": "✅ Sent to {ok} members • failed {fail}.",
@@ -133,6 +149,7 @@ def admin_kb(lang):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(T[lang]["admin_stats"], callback_data="adm:stats")],
         [InlineKeyboardButton(T[lang]["admin_broadcast"], callback_data="adm:bc")],
+        [InlineKeyboardButton(T[lang]["admin_export"], callback_data="adm:export")],
     ])
 
 
@@ -293,13 +310,19 @@ async def admin_callback(_, cb):
     if action == "stats":
         await cb.answer()
         await cb.message.edit_text(
-            T[lang]["stats_text"].format(n=storage.count_users()),
+            T[lang]["stats_text"].format(**storage.get_stats()),
             reply_markup=admin_kb(lang),
         )
     elif action == "bc":
         awaiting_broadcast.add(cb.from_user.id)
         await cb.answer()
         await cb.message.edit_text(T[lang]["broadcast_prompt"])
+    elif action == "export":
+        await cb.answer()
+        data = storage.export_users_text().encode("utf-8")
+        doc = io.BytesIO(data)
+        doc.name = "members.txt"
+        await cb.message.reply_document(doc, caption=T[lang]["export_caption"])
 
 
 @app.on_callback_query(filters.regex(r"^r:"))

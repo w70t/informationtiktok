@@ -77,3 +77,37 @@ def get_all_users():
         return [dict(r) for r in c.execute(
             "SELECT user_id, username, first_name, language, joined_at FROM users"
         ).fetchall()]
+
+
+def get_stats():
+    """إحصائيات الأعضاء: الإجمالي + حسب اللغة + الجدد اليوم وآخر 7 أيام."""
+    today = time.strftime("%Y-%m-%d")
+    week_ago = time.strftime("%Y-%m-%d", time.localtime(time.time() - 7 * 86400))
+    with _conn() as c:
+        def one(sql, params=()):
+            return c.execute(sql, params).fetchone()["n"]
+
+        return {
+            "total": one("SELECT COUNT(*) AS n FROM users"),
+            "ar": one("SELECT COUNT(*) AS n FROM users WHERE language = 'ar'"),
+            "en": one("SELECT COUNT(*) AS n FROM users WHERE language = 'en'"),
+            "today": one(
+                "SELECT COUNT(*) AS n FROM users WHERE substr(joined_at,1,10) = ?",
+                (today,),
+            ),
+            "week": one(
+                "SELECT COUNT(*) AS n FROM users WHERE substr(joined_at,1,10) >= ?",
+                (week_ago,),
+            ),
+        }
+
+
+def export_users_text():
+    """نص يحتوي كل الأعضاء (لإرساله كملف للأدمن)."""
+    lines = ["user_id | username | name | lang | joined_at"]
+    for u in get_all_users():
+        lines.append(
+            f"{u['user_id']} | @{u['username'] or '-'} | "
+            f"{u['first_name'] or '-'} | {u['language'] or '-'} | {u['joined_at'] or '-'}"
+        )
+    return "\n".join(lines)
