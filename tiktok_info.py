@@ -9,8 +9,7 @@ tiktok_info.py
   (C) tikwm     : مصدر مجاني ثابت حين يحجب تيك توك الطلب المباشر.
   (B) TikTokApi : متصفح Chromium حقيقي (ملاذ أخير، اختياري).
 
-دولة الحساب تُستخرج من أغلبية مناطق فيديوهاته عبر tikwm (دقيقة).
-وللحسابات بلا فيديوهات: يوجّه العضو لإرسال رابط فيديو لمعرفة دولة نشره.
+دولة الحساب: من أغلبية مناطق فيديوهاته (دقيقة)، وللحسابات بلا فيديوهات تقدير من المتابَعات.
 كل الحقول بيانات عامة، ليست اختراقاً.
 """
 
@@ -51,6 +50,16 @@ def decode_create_time(user_id):
         return datetime.fromtimestamp(timestamp, tz=timezone.utc)
     except (ValueError, TypeError):
         return None
+
+
+def _date_from_unix(ts):
+    """تحويل طابع Unix إلى تاريخ YYYY-MM-DD، أو None."""
+    try:
+        if ts and int(ts) > 0:
+            return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
+    except (ValueError, TypeError, OSError):
+        pass
+    return None
 
 
 def _extract_universal_json(html):
@@ -113,6 +122,15 @@ def _normalize(user, stats):
         "hearts": stats.get("heartCount") or stats.get("heart"),
         "videos": stats.get("videoCount"),
         "friends": stats.get("friendCount"),
+        # حقول إضافية (إعدادات الحساب)
+        "nick_modify": _date_from_unix(user.get("nickNameModifyTime")),
+        "comment_setting": user.get("commentSetting"),
+        "duet_setting": user.get("duetSetting"),
+        "stitch_setting": user.get("stitchSetting"),
+        "download_setting": user.get("downloadSetting"),
+        "open_favorite": user.get("openFavorite"),
+        "following_visibility": user.get("followingVisibility"),
+        "story": user.get("UserStoryStatus"),
     }
 
 
@@ -224,7 +242,7 @@ def get_account_region(username, max_videos=30):
 
 def get_region_from_following(user_id, sec_uid=None, max_users=50):
     """
-    تقدير دولة الحساب من أغلبية دول الحسابات التي يتابعها (غير مستخدم حالياً).
+    تقدير دولة الحساب من أغلبية دول الحسابات التي يتابعها (للحسابات بلا فيديوهات).
     قائمة tikwm/following ترجّع region لكل حساب متابَع. تقديري (أقل دقة).
     """
     if not user_id:
@@ -264,12 +282,23 @@ def get_social_links(username):
 
 
 def _enrich(username, info):
-    """إضافة دولة الحساب (من الفيديوهات فقط — دقيقة) والحسابات المربوطة."""
+    """إضافة دولة الحساب والحسابات المربوطة.
+
+    الدولة: من أغلبية مناطق الفيديوهات (دقيقة)، وإلا تقدير من أغلبية دول المتابَعات.
+    """
     region, count, total = get_account_region(username)
     if region:
         info["region"] = region
         info["region_confidence"] = f"{count}/{total}"
         info["region_source"] = "videos"
+    else:
+        region, count, total = get_region_from_following(
+            info.get("user_id"), info.get("sec_uid")
+        )
+        if region:
+            info["region"] = region
+            info["region_confidence"] = f"{count}/{total}"
+            info["region_source"] = "following"
     info["social"] = get_social_links(username)
 
 
@@ -377,6 +406,23 @@ def country_label(code, lang="ar"):
     return f"{flag} {name} ({code})" if name else f"{flag} {code}"
 
 
+def _perm_label(v, lang):
+    """رمز إعداد (تعليق/دويت/ستيتش) → نص. 0=الجميع 1=الأصدقاء 3=لا أحد."""
+    ar = lang != "en"
+    if v is None:
+        return "غير متوفر" if ar else "N/A"
+    mapping = {
+        0: ("الجميع", "Everyone"),
+        1: ("الأصدقاء", "Friends"),
+        2: ("لا أحد", "No one"),
+        3: ("لا أحد", "No one"),
+    }
+    pair = mapping.get(v)
+    if not pair:
+        return str(v)
+    return pair[0] if ar else pair[1]
+
+
 def format_report(info, lang="ar"):
     """تنسيق التقرير بلغة المستخدم (ar/en)."""
     ar = lang != "en"
@@ -445,6 +491,45 @@ def format_report(info, lang="ar"):
         f"{L['videos']}: {val(info['videos'])}",
     ]
 
+    # قسم الإعدادات (يظهر فقط الحقول المتوفرة)
+    set_lines = []
+    if info.get("nick_modify"):
+        set_lines.append(
+            f"{'✏️ آخر تعديل للاسم' if ar else '✏️ Last name change'}: {info['nick_modify']}"
+        )
+    if info.get("comment_setting") is not None:
+        set_lines.append(
+            f"{'💬 التعليقات' if ar else '💬 Comments'}: {_perm_label(info['comment_setting'], lang)}"
+        )
+    if info.get("duet_setting") is not None:
+        set_lines.append(
+            f"{'🎭 الدويت' if ar else '🎭 Duet'}: {_perm_label(info['duet_setting'], lang)}"
+        )
+    if info.get("stitch_setting") is not None:
+        set_lines.append(
+            f"{'✂️ الستيتش' if ar else '✂️ Stitch'}: {_perm_label(info['stitch_setting'], lang)}"
+        )
+    if info.get("download_setting") is not None:
+        dl = info["download_setting"] == 0
+        set_lines.append(
+            f"{'⬇️ التحميل' if ar else '⬇️ Download'}: "
+            + (("مسموح" if dl else "ممنوع") if ar else ("Allowed" if dl else "Off"))
+        )
+    if info.get("open_favorite") is not None:
+        fav = info["open_favorite"]
+        set_lines.append(
+            f"{'⭐ المفضلة ظاهرة' if ar else '⭐ Favorites public'}: {yn(fav)}"
+        )
+    if info.get("following_visibility") is not None:
+        vis = info["following_visibility"] == 1
+        set_lines.append(
+            f"{'👁 رؤية المتابَعات' if ar else '👁 Following list'}: "
+            + (("الجميع" if vis else "مخفية") if ar else ("Everyone" if vis else "Hidden"))
+        )
+    if set_lines:
+        lines.append(sep)
+        lines.extend(set_lines)
+
     social = info.get("social") or {}
     soc = []
     if social.get("instagram"):
@@ -461,13 +546,13 @@ def format_report(info, lang="ar"):
         lines.append(sep)
         lines.append(f"{L['bio']}: {info['signature']}")
 
-    # حساب بدون فيديوهات: لا يمكن تحديد الدولة بدقة → نوجّهه لإرسال رابط فيديو
+    # حساب بدون فيديوهات وبلا تقدير: نوجّهه لإرسال رابط فيديو
     if not info.get("region"):
         lines.append(sep)
         lines.append(
-            "ℹ️ هذا الحساب بدون فيديوهات، فلا يمكن تحديد دولته بدقة 100%.\n"
+            "ℹ️ لم نتمكّن من تحديد دولة هذا الحساب.\n"
             "أرسل رابط أي فيديو لمعرفة دولة نشره." if ar else
-            "ℹ️ This account has no videos, so its country can't be determined with 100% accuracy.\n"
+            "ℹ️ Couldn't determine this account's country.\n"
             "Send any video link to find out where it was posted."
         )
     return "\n".join(lines)
