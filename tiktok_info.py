@@ -9,7 +9,7 @@ tiktok_info.py
   (C) tikwm     : مصدر مجاني ثابت حين يحجب تيك توك الطلب المباشر.
   (B) TikTokApi : متصفح Chromium حقيقي (ملاذ أخير، اختياري).
 
-دولة الحساب: من أغلبية مناطق فيديوهاته (دقيقة)، وللحسابات بلا فيديوهات تقدير من المتابَعات.
+دولة الحساب: من أغلبية مناطق فيديوهاته (دقيقة)، وللحسابات بلا فيديوهات تقدير.
 كل الحقول بيانات عامة، ليست اختراقاً.
 """
 
@@ -436,17 +436,16 @@ def format_report(info, lang="ar"):
     def val(v):
         return v if v not in (None, "") else na
 
-    # سطر الدولة مع مصدرها ونسبة الثقة
+    # سطر الدولة مع مصدرها
     if info.get("region"):
         region_line = country_label(info["region"], lang)
-        conf = info.get("region_confidence")
         src = info.get("region_source")
+        conf = info.get("region_confidence")
         if src == "videos" and conf:
             region_line += (f"  (من الفيديوهات: {conf})" if ar
                             else f"  (from videos: {conf})")
-        elif src == "following" and conf:
-            region_line += (f"  (تقديري من المتابَعات: {conf})" if ar
-                            else f"  (estimated from following: {conf})")
+        elif src == "following":
+            region_line += ("  (تقديري)" if ar else "  (estimated)")
     else:
         region_line = na
 
@@ -548,15 +547,18 @@ def format_report(info, lang="ar"):
         lines.append(sep)
         lines.append(f"{L['bio']}: {info['signature']}")
 
-    # حساب بدون فيديوهات وبلا تقدير: نوجّهه لإرسال رابط فيديو
-    if not info.get("region"):
+    # حساب بدون فيديوهات: تنبيه أنه لا يمكن التأكيد بدقة (الدولة تقديرية إن وُجدت)
+    if info.get("region_source") != "videos":
         lines.append(sep)
-        lines.append(
-            "ℹ️ لم نتمكّن من تحديد دولة هذا الحساب.\n"
-            "أرسل رابط أي فيديو لمعرفة دولة نشره." if ar else
-            "ℹ️ Couldn't determine this account's country.\n"
-            "Send any video link to find out where it was posted."
-        )
+        if ar:
+            msg = "ℹ️ هذا الحساب لم ينشر أي فيديو، فلا يمكننا تأكيد دولته بدقة 100%."
+            if not info.get("region"):
+                msg += "\nأرسل رابط أي فيديو لمعرفة دولة نشره."
+        else:
+            msg = "ℹ️ This account hasn't posted any video, so we can't confirm its country with 100% accuracy."
+            if not info.get("region"):
+                msg += "\nSend any video link to find out where it was posted."
+        lines.append(msg)
     return "\n".join(lines)
 
 
