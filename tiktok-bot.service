@@ -1,0 +1,16 @@
+[Unit]
+Description=TikTok Info Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# عدّل المستخدم والمسارات إن كانت مختلفة عندك
+User=abdalwahab
+WorkingDirectory=/home/abdalwahab/informationtiktok
+ExecStart=/home/abdalwahab/informationtiktok/venv/bin/python tiktok_info_bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
