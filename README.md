@@ -10,9 +10,12 @@
 | الملف | الوظيفة |
 |---|---|
 | `tiktok_info.py` | جلب البيانات وتنسيقها (النواة) |
-| `tiktok_info_bot.py` | بوت تيليجرام (Pyrogram) + زر تحديث 🔄 |
+| `tiktok_info_bot.py` | بوت تيليجرام (Pyrogram) + لوحة أدمن + اشتراك إجباري |
+| `storage.py` | قاعدة بيانات الأعضاء والقنوات (SQLite) |
 | `requirements.txt` | المكتبات المطلوبة |
+| `tiktok-bot.service` | ملف خدمة systemd للتشغيل ٢٤ ساعة |
 | `TIKTOK_INFO_BOT.md` | 📖 دليل التشغيل الكامل (يشمل Raspberry Pi 5) |
+| `RUN_24_7.md` | 🟢 تشغيل البوت ٢٤ ساعة تلقائياً (systemd) |
 
 ## البدء السريع
 ```bash
@@ -22,3 +25,4 @@ bash run.sh                       # تشغيل البوت (بعد إعداد .en
 ```
 
 📖 التفاصيل الكاملة وخطوات Raspberry Pi 5 في **[TIKTOK_INFO_BOT.md](TIKTOK_INFO_BOT.md)**.
+🟢 لتشغيله ٢٤ ساعة تلقائياً: **[RUN_24_7.md](RUN_24_7.md)**.
